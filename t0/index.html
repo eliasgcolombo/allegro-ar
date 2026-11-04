@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>T0 · Teste de realidade aumentada</title>
+<script src="../assets/lib/aframe.min.js"></script>
+<script src="../assets/lib/mindar-image-aframe.prod.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #111; font-family: system-ui, -apple-system, sans-serif; }
+  #start {
+    position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; padding: 24px;
+    background: #1b1410; color: #f3ead8; text-align: center;
+  }
+  #start h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  #start p { margin: 0; font-size: 15px; line-height: 1.45; max-width: 340px; opacity: .85; }
+  #start button {
+    margin-top: 8px; padding: 14px 28px; font-size: 17px; border: 0; border-radius: 999px;
+    background: #c9a227; color: #1b1410; font-weight: 600;
+  }
+  #warn { display: none; background: #7a2e1e; color: #fff; padding: 12px; border-radius: 10px; font-size: 14px; max-width: 340px; }
+  #hud {
+    position: fixed; left: 8px; right: 8px; bottom: 10px; z-index: 10;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 13px; line-height: 1.4;
+    padding: 8px 10px; border-radius: 10px; display: none;
+  }
+  #hud b { color: #c9a227; }
+  #hud button { margin-top: 6px; padding: 6px 12px; font-size: 13px; border-radius: 8px; border: 0; }
+</style>
+</head>
+<body>
+
+<div id="start">
+  <h1>T0 · Teste de câmera e reconhecimento</h1>
+  <p>Abra o alvo de teste em outra tela (notebook, TV ou outro celular) ou imprima. Depois toque em iniciar e aponte a câmera para ele.</p>
+  <p><a href="../alvo.html" style="color:#c9a227">Abrir o alvo de teste</a></p>
+  <div id="warn"></div>
+  <button id="go">Iniciar câmera</button>
+</div>
+
+<div id="hud">
+  <div>Status: <b id="st">carregando…</b></div>
+  <div>Tempo até reconhecer: <b id="tf">–</b> · Perdeu o alvo: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
+  <button id="copy">Copiar diagnóstico</button>
+</div>
+
+<a-scene id="scene"
+  mindar-image="imageTargetSrc: ../assets/targets/card.mind; autoStart: false; uiLoading: no; uiError: no; uiScanning: yes; filterMinCF: 0.0001; filterBeta: 0.001"
+  color-space="sRGB" renderer="colorManagement: true; antialias: true"
+  vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+  <a-entity id="target" mindar-image-target="targetIndex: 0">
+    <a-plane color="#c9a227" opacity="0.55" width="1" height="0.552" position="0 0 0"></a-plane>
+    <a-text value="T0 OK" color="#1b1410" align="center" width="2.4" position="0 0.08 0.01"></a-text>
+    <a-box color="#7a2e1e" width="0.16" height="0.16" depth="0.16" position="0 -0.12 0.12"
+      animation="property: rotation; to: 360 360 0; loop: true; dur: 3000; easing: linear"></a-box>
+  </a-entity>
+</a-scene>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const ua = navigator.userAgent;
+  const inApp = /Instagram|FBAN|FBAV|Line\/|Twitter/i.test(ua);
+  if (inApp) {
+    $('warn').style.display = 'block';
+    $('warn').textContent = 'Parece que você está no navegador interno de um app. Se a câmera não abrir, toque em "…" e escolha abrir no navegador padrão.';
+  }
+
+  let t0 = null, firstFound = null, lostCount = 0, status = 'carregando';
+  const setStatus = (s) => { status = s; $('st').textContent = s; };
+
+  const scene = $('scene');
+  const target = $('target');
+
+  function begin() {
+    $('start').style.display = 'none';
+    $('hud').style.display = 'block';
+    setStatus('abrindo câmera…');
+    t0 = performance.now();
+    const sys = scene.systems['mindar-image-system'];
+    sys.start();
+  }
+
+  $('go').addEventListener('click', () => {
+    if (scene.hasLoaded) begin(); else scene.addEventListener('loaded', begin, { once: true });
+  });
+
+  scene.addEventListener('arReady', () => setStatus('procurando o alvo'));
+  scene.addEventListener('arError', () => setStatus('erro ao abrir a câmera'));
+  target.addEventListener('targetFound', () => {
+    if (firstFound === null) {
+      firstFound = (performance.now() - t0) / 1000;
+      $('tf').textContent = firstFound.toFixed(1) + ' s (desde iniciar)';
+    }
+    setStatus('alvo reconhecido');
+  });
+  target.addEventListener('targetLost', () => { lostCount++; $('lost').textContent = lostCount; setStatus('procurando o alvo'); });
+
+  // FPS
+  let frames = 0, last = performance.now(), fps = 0;
+  (function loop(now) {
+    frames++;
+    if (now - last >= 1000) { fps = Math.round(frames * 1000 / (now - last)); $('fps').textContent = fps; frames = 0; last = now; }
+    requestAnimationFrame(loop);
+  })(performance.now());
+
+  $('copy').addEventListener('click', async () => {
+    const txt = [
+      'Teste: T0',
+      'Status: ' + status,
+      'Tempo até reconhecer: ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
+      'Perdeu o alvo: ' + lostCount + 'x',
+      'FPS: ' + fps,
+      'Tela: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio,
+      'Navegador: ' + ua
+    ].join('\n');
+    try { await navigator.clipboard.writeText(txt); $('copy').textContent = 'Copiado! Cole no chat'; }
+    catch (e) { prompt('Copie o diagnóstico:', txt); }
+  });
+</script>
+</body>
+</html>
