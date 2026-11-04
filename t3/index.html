@@ -34,7 +34,7 @@
 
 <div id="start">
   <h1>T3 · Rótulo animado</h1>
-  <p>Aponte para o rótulo do Allegro (Safra 2026) a uns 20–40 cm. Quando reconhecer, o rótulo ganha vida: a menina balança e as notas sobem.</p>
+  <p>Aponte para o rótulo do Allegro (Safra 2026) a uns 20–40 cm. Quando reconhecer, a cena se aproxima e a menina sai caminhando, cantando, em direção à flor.</p>
   <div id="warn"></div>
   <button class="opt" data-alvo="casa2" style="text-align:center"><b style="margin:0">Iniciar</b></button>
 </div>
@@ -42,7 +42,7 @@
 <div id="hud">
   <div>Alvo: <b id="alvo">–</b> · Status: <b id="st">carregando…</b></div>
   <div>Câmera abriu em: <b id="cam">–</b> · Reconheceu após: <b id="tf">–</b></div><div>Tolerância: <b id="tol">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
-  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar animação</button><button id="estbtn">Estabilizador: ligado</button><button onclick="location.reload()">Reiniciar</button>
+  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar animação</button><button id="estbtn">Estabilizador: ligado</button><button id="replay">Ver de novo</button><button onclick="location.reload()">Reiniciar</button>
 </div>
 
 <script>
@@ -123,9 +123,11 @@
   const setStatus = (s) => { status = s; $('st').textContent = s; };
 
   const vid = document.createElement('video');
-  vid.id = 'vid'; vid.src = '../assets/video/allegro_t3.mp4'; vid.loop = true; vid.muted = true;
+  vid.id = 'vid'; vid.src = '../assets/video/allegro_t3b.mp4'; vid.loop = false; vid.muted = true;
   vid.setAttribute('playsinline', ''); vid.setAttribute('webkit-playsinline', ''); vid.crossOrigin = 'anonymous'; vid.preload = 'auto';
   vid.style.display = 'none'; document.body.appendChild(vid);
+
+  document.getElementById('replay').addEventListener('click', () => { vid.currentTime = 0; vid.play().catch(() => {}); });
 
   function montar(alvo) {
     vid.play().then(() => { vid.pause(); vid.currentTime = 0; }).catch(() => {});
@@ -163,7 +165,7 @@
         $('tf').textContent = firstFound.toFixed(1) + ' s';
       }
       setStatus('rótulo reconhecido');
-      vid.play().catch(() => {});
+      if (!vid.ended) vid.play().catch(() => {});
     });
     target.addEventListener('targetLost', () => { vid.pause(); lostCount++; $('lost').textContent = lostCount; setStatus('procurando o rótulo'); });
   }
