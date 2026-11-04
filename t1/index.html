@@ -44,7 +44,7 @@
 <div id="hud">
   <div>Alvo: <b id="alvo">–</b> · Status: <b id="st">carregando…</b></div>
   <div>Câmera abriu em: <b id="cam">–</b> · Reconheceu após: <b id="tf">–</b></div><div>Tolerância: <b id="tol">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
-  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button id="estbtn">Estabilizador: ligado</button><button onclick="location.reload()">Trocar alvo</button>
+  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button id="estbtn">Estabilizador: ligado</button><button id="opbtn">Sobreposição: transparente</button><button onclick="location.reload()">Trocar alvo</button>
 </div>
 
 <script>
@@ -65,20 +65,32 @@
 
   // ---- Estabilizador: suaviza e "segura" a pose quando a variação é pequena ----
   const Q = new URLSearchParams(location.search);
-  const EST = { on: Q.get('est') !== '0', a: parseFloat(Q.get('a') || '0.18'), dz: parseFloat(Q.get('dz') || '0.02'), dzAng: parseFloat(Q.get('ang') || '1.5') };
+  const EST = { on: Q.get('est') !== '0', a: parseFloat(Q.get('a') || '0.15'), dz: parseFloat(Q.get('dz') || '0.03'), dzAng: parseFloat(Q.get('ang') || '2'), n: parseInt(Q.get('n') || '7', 10) };
   AFRAME.registerComponent('estabilizar', {
     schema: { alvo: { type: 'selector' } },
     init() {
       this.p = new THREE.Vector3(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3();
       this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
-      this.tinha = false;
+      this.tinha = false; this.hist = [];
+      this.mp = new THREE.Vector3(); this.mq = new THREE.Quaternion();
       this.el.object3D.visible = false;
     },
     tick() {
       const t = this.data.alvo && this.data.alvo.object3D;
       const o = this.el.object3D;
-      if (!t || !t.visible) { o.visible = false; this.tinha = false; return; }
+      if (!t || !t.visible) { o.visible = false; this.tinha = false; this.hist = []; return; }
       t.matrix.decompose(this.p, this.q, this.s);
+      if (EST.on && EST.n > 1) {
+        // filtro de mediana na posição e média na rotação: descarta saltos de 1-2 quadros
+        this.hist.push({ p: this.p.clone(), q: this.q.clone() });
+        if (this.hist.length > EST.n) this.hist.shift();
+        const med = (k) => { const v = this.hist.map(h => h.p[k]).sort((x, y) => x - y); return v[v.length >> 1]; };
+        this.mp.set(med('x'), med('y'), med('z'));
+        const ref = this.hist[this.hist.length - 1].q; let x = 0, y = 0, z = 0, w = 0;
+        for (const h of this.hist) { const sg = (h.q.dot(ref) < 0) ? -1 : 1; x += sg*h.q.x; y += sg*h.q.y; z += sg*h.q.z; w += sg*h.q.w; }
+        this.mq.set(x, y, z, w).normalize();
+        this.p.copy(this.mp); this.q.copy(this.mq);
+      }
       if (!this.tinha || !EST.on) {
         this.cp.copy(this.p); this.cq.copy(this.q); this.cs.copy(this.s); this.tinha = true;
       } else {
@@ -151,6 +163,14 @@
   atualizaEst();
   $('estbtn').addEventListener('click', () => { EST.on = !EST.on; atualizaEst(); });
 
+  let opaco = false;
+  $('opbtn').addEventListener('click', () => {
+    opaco = !opaco;
+    const o = document.getElementById('over');
+    if (o) o.setAttribute('material', 'opacity', opaco ? 1 : 0.55);
+    $('opbtn').textContent = 'Sobreposição: ' + (opaco ? 'opaca' : 'transparente');
+  });
+
   let visivel = true;
   $('toggle').addEventListener('click', () => {
     visivel = !visivel;
@@ -173,7 +193,8 @@
       'Câmera abriu em: ' + $('cam').textContent,
       'Reconheceu após (com câmera aberta): ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
       'Tolerância: ' + TOL,
-      'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado') + ' (a=' + EST.a + ', dz=' + EST.dz + ', ang=' + EST.dzAng + ')',
+      'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado') + ' (a=' + EST.a + ', dz=' + EST.dz + ', ang=' + EST.dzAng + ', n=' + EST.n + ')',
+      'Sobreposição: ' + (opaco ? 'opaca' : 'transparente'),
       'Perdeu o alvo: ' + lostCount + 'x',
       'FPS: ' + fps,
       'Tela: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio,
