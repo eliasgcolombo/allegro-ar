@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>T1/T2 · Rótulo do Allegro</title>
+<script src="../assets/lib/aframe.min.js"></script>
+<script src="../assets/lib/mindar-image-aframe.prod.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #111; font-family: system-ui, -apple-system, sans-serif; }
+  #start {
+    position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; padding: 24px;
+    background: #1b1410; color: #f3ead8; text-align: center; overflow-y: auto;
+  }
+  #start h1 { font-size: 21px; margin: 0; font-weight: 600; }
+  #start p { margin: 0; font-size: 15px; line-height: 1.45; max-width: 340px; opacity: .85; }
+  .opt {
+    width: 100%; max-width: 340px; padding: 14px 16px; border: 0; border-radius: 14px;
+    background: #2a201a; color: #f3ead8; font-size: 15px; text-align: left;
+  }
+  .opt b { color: #c9a227; display: block; font-size: 16px; margin-bottom: 2px; }
+  #warn { display: none; background: #7a2e1e; color: #fff; padding: 12px; border-radius: 10px; font-size: 14px; max-width: 340px; }
+  #hud {
+    position: fixed; left: 8px; right: 8px; bottom: 10px; z-index: 10;
+    background: rgba(0,0,0,.62); color: #fff; font-size: 13px; line-height: 1.4;
+    padding: 8px 10px; border-radius: 10px; display: none;
+  }
+  #hud b { color: #c9a227; }
+  #hud button { margin: 6px 6px 0 0; padding: 6px 12px; font-size: 13px; border-radius: 8px; border: 0; }
+</style>
+</head>
+<body>
+
+<div id="start">
+  <h1>Rótulo do Allegro</h1>
+  <p>Escolha qual imagem de referência testar. Aponte para o rótulo a uns 20–40 cm. Se reconhecer, aparece uma moldura dourada e a imagem de referência sobreposta ao rótulo.</p>
+  <div id="warn"></div>
+  <button class="opt" data-alvo="casa"><b>A · Foto da garrafa (Safra 2026, com medalhas)</b>Feita a partir da sua foto em casa</button>
+  <button class="opt" data-alvo="render"><b>B · Imagem de estúdio (Safra 2026)</b>Rótulo limpo, sem medalhas</button>
+  <button class="opt" data-alvo="antiga"><b>C · Rótulo sem "Safra"</b>Para garrafas com o rótulo anterior</button>
+</div>
+
+<div id="hud">
+  <div>Alvo: <b id="alvo">–</b> · Status: <b id="st">carregando…</b></div>
+  <div>Tempo até reconhecer: <b id="tf">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
+  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button onclick="location.reload()">Trocar alvo</button>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const ua = navigator.userAgent;
+  if (/Instagram|FBAN|FBAV|Line\/|Twitter/i.test(ua)) {
+    $('warn').style.display = 'block';
+    $('warn').textContent = 'Parece que você está no navegador interno de um app. Se a câmera não abrir, toque em "…" e escolha abrir no navegador padrão.';
+  }
+
+  // altura/largura de cada imagem de referência
+  const ALVOS = {
+    casa:   { ratio: 875 / 743, nome: 'A · foto da garrafa' },
+    render: { ratio: 756 / 624, nome: 'B · estúdio' },
+    antiga: { ratio: 817 / 712, nome: 'C · sem safra' }
+  };
+
+  let t0 = null, firstFound = null, lostCount = 0, status = 'carregando', alvoAtual = null, fps = 0;
+  const setStatus = (s) => { status = s; $('st').textContent = s; };
+
+  function montar(alvo) {
+    alvoAtual = alvo;
+    const a = ALVOS[alvo];
+    const h = a.ratio.toFixed(4);
+    $('start').style.display = 'none';
+    $('hud').style.display = 'block';
+    $('alvo').textContent = a.nome;
+    setStatus('abrindo câmera…');
+    t0 = performance.now();
+
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <a-scene id="scene"
+        mindar-image="imageTargetSrc: ../assets/targets/${alvo}.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: yes; filterMinCF: 0.0001; filterBeta: 0.001"
+        color-space="sRGB" renderer="colorManagement: true; antialias: true"
+        vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+        <a-assets><img id="ref" src="../assets/targets/${alvo}.jpg" crossorigin="anonymous"></a-assets>
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+        <a-entity id="target" mindar-image-target="targetIndex: 0">
+          <a-plane id="over" src="#ref" width="1" height="${h}" opacity="0.55" transparent="true"></a-plane>
+          <a-plane color="#c9a227" width="1.04" height="0.02" position="0 ${(a.ratio/2+0.01).toFixed(4)} 0.002"></a-plane>
+          <a-plane color="#c9a227" width="1.04" height="0.02" position="0 ${(-a.ratio/2-0.01).toFixed(4)} 0.002"></a-plane>
+          <a-plane color="#c9a227" width="0.02" height="${(a.ratio+0.04).toFixed(4)}" position="-0.51 0 0.002"></a-plane>
+          <a-plane color="#c9a227" width="0.02" height="${(a.ratio+0.04).toFixed(4)}" position="0.51 0 0.002"></a-plane>
+        </a-entity>
+      </a-scene>`;
+    document.body.appendChild(wrap.firstElementChild);
+
+    const scene = document.getElementById('scene');
+    const target = document.getElementById('target');
+    scene.addEventListener('arReady', () => setStatus('procurando o rótulo'));
+    scene.addEventListener('arError', () => setStatus('erro ao abrir a câmera'));
+    target.addEventListener('targetFound', () => {
+      if (firstFound === null) {
+        firstFound = (performance.now() - t0) / 1000;
+        $('tf').textContent = firstFound.toFixed(1) + ' s';
+      }
+      setStatus('rótulo reconhecido');
+    });
+    target.addEventListener('targetLost', () => { lostCount++; $('lost').textContent = lostCount; setStatus('procurando o rótulo'); });
+  }
+
+  document.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => montar(b.dataset.alvo)));
+
+  let visivel = true;
+  $('toggle').addEventListener('click', () => {
+    visivel = !visivel;
+    const o = document.getElementById('over');
+    if (o) o.setAttribute('visible', visivel);
+    $('toggle').textContent = visivel ? 'Ocultar sobreposição' : 'Mostrar sobreposição';
+  });
+
+  let frames = 0, last = performance.now();
+  (function loop(now) {
+    frames++;
+    if (now - last >= 1000) { fps = Math.round(frames * 1000 / (now - last)); $('fps').textContent = fps; frames = 0; last = now; }
+    requestAnimationFrame(loop);
+  })(performance.now());
+
+  $('copy').addEventListener('click', async () => {
+    const txt = [
+      'Teste: T1/T2 · alvo ' + alvoAtual,
+      'Status: ' + status,
+      'Tempo até reconhecer: ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
+      'Perdeu o alvo: ' + lostCount + 'x',
+      'FPS: ' + fps,
+      'Tela: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio,
+      'Navegador: ' + ua
+    ].join('\n');
+    try { await navigator.clipboard.writeText(txt); $('copy').textContent = 'Copiado! Cole no chat'; }
+    catch (e) { prompt('Copie o diagnóstico:', txt); }
+  });
+</script>
+</body>
+</html>
