@@ -44,7 +44,7 @@
 <div id="hud">
   <div>Alvo: <b id="alvo">–</b> · Status: <b id="st">carregando…</b></div>
   <div>Câmera abriu em: <b id="cam">–</b> · Reconheceu após: <b id="tf">–</b></div><div>Tolerância: <b id="tol">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
-  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button onclick="location.reload()">Trocar alvo</button>
+  <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button id="estbtn">Estabilizador: ligado</button><button onclick="location.reload()">Trocar alvo</button>
 </div>
 
 <script>
@@ -61,6 +61,40 @@
     render: { ratio: 756 / 624, nome: 'B · estúdio' },
     antiga: { ratio: 817 / 712, nome: 'C · sem safra' }
   };
+
+
+  // ---- Estabilizador: suaviza e "segura" a pose quando a variação é pequena ----
+  const Q = new URLSearchParams(location.search);
+  const EST = { on: Q.get('est') !== '0', a: parseFloat(Q.get('a') || '0.18'), dz: parseFloat(Q.get('dz') || '0.02'), dzAng: parseFloat(Q.get('ang') || '1.5') };
+  AFRAME.registerComponent('estabilizar', {
+    schema: { alvo: { type: 'selector' } },
+    init() {
+      this.p = new THREE.Vector3(); this.q = new THREE.Quaternion(); this.s = new THREE.Vector3();
+      this.cp = new THREE.Vector3(); this.cq = new THREE.Quaternion(); this.cs = new THREE.Vector3();
+      this.tinha = false;
+      this.el.object3D.visible = false;
+    },
+    tick() {
+      const t = this.data.alvo && this.data.alvo.object3D;
+      const o = this.el.object3D;
+      if (!t || !t.visible) { o.visible = false; this.tinha = false; return; }
+      t.matrix.decompose(this.p, this.q, this.s);
+      if (!this.tinha || !EST.on) {
+        this.cp.copy(this.p); this.cq.copy(this.q); this.cs.copy(this.s); this.tinha = true;
+      } else {
+        const largura = this.cs.x || 1;
+        const dist = this.p.distanceTo(this.cp) / largura;
+        const ang = this.q.angleTo(this.cq) * 180 / Math.PI;
+        if (dist > EST.dz || ang > EST.dzAng) {
+          // quanto maior o movimento, mais rápido acompanha
+          const k = Math.min(1, EST.a * (1 + Math.max(dist / EST.dz, ang / EST.dzAng) / 4));
+          this.cp.lerp(this.p, k); this.cq.slerp(this.q, k); this.cs.lerp(this.s, k);
+        }
+      }
+      o.position.copy(this.cp); o.quaternion.copy(this.cq); o.scale.copy(this.cs);
+      o.visible = true;
+    }
+  });
 
   const TOL = parseInt(new URLSearchParams(location.search).get('tol') || '15', 10);
   let tReady = null;
@@ -86,7 +120,8 @@
         vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
         <a-assets><img id="ref" src="../assets/targets/${alvo}.jpg" crossorigin="anonymous"></a-assets>
         <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-        <a-entity id="target" mindar-image-target="targetIndex: 0">
+        <a-entity id="target" mindar-image-target="targetIndex: 0"></a-entity>
+        <a-entity id="stab" estabilizar="alvo: #target">
           <a-plane id="over" src="#ref" width="1" height="${h}" opacity="0.55" transparent="true"></a-plane>
           <a-plane color="#c9a227" width="1.04" height="0.02" position="0 ${(a.ratio/2+0.01).toFixed(4)} 0.002"></a-plane>
           <a-plane color="#c9a227" width="1.04" height="0.02" position="0 ${(-a.ratio/2-0.01).toFixed(4)} 0.002"></a-plane>
@@ -112,6 +147,10 @@
 
   document.querySelectorAll('.opt').forEach(b => b.addEventListener('click', () => montar(b.dataset.alvo)));
 
+  const atualizaEst = () => { $('estbtn').textContent = 'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado'); };
+  atualizaEst();
+  $('estbtn').addEventListener('click', () => { EST.on = !EST.on; atualizaEst(); });
+
   let visivel = true;
   $('toggle').addEventListener('click', () => {
     visivel = !visivel;
@@ -134,6 +173,7 @@
       'Câmera abriu em: ' + $('cam').textContent,
       'Reconheceu após (com câmera aberta): ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
       'Tolerância: ' + TOL,
+      'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado') + ' (a=' + EST.a + ', dz=' + EST.dz + ', ang=' + EST.dzAng + ')',
       'Perdeu o alvo: ' + lostCount + 'x',
       'FPS: ' + fps,
       'Tela: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio,
