@@ -36,7 +36,8 @@
   <h1>Rótulo do Allegro</h1>
   <p>Escolha qual imagem de referência testar. Aponte para o rótulo a uns 20–40 cm. Se reconhecer, aparece uma moldura dourada e a imagem de referência sobreposta ao rótulo.</p>
   <div id="warn"></div>
-  <button class="opt" data-alvo="casa"><b>A · Foto da garrafa (Safra 2026, com medalhas)</b>Feita a partir da sua foto em casa</button>
+  <button class="opt" data-alvo="casa2"><b>A2 · Foto nova (recomendada)</b>Referência mais nítida e frontal</button>
+  <button class="opt" data-alvo="casa"><b>A · Foto da garrafa (Safra 2026, com medalhas)</b>Primeira foto em casa</button>
   <button class="opt" data-alvo="render"><b>B · Imagem de estúdio (Safra 2026)</b>Rótulo limpo, sem medalhas</button>
   <button class="opt" data-alvo="antiga"><b>C · Rótulo sem "Safra"</b>Para garrafas com o rótulo anterior</button>
 </div>
@@ -57,6 +58,7 @@
 
   // altura/largura de cada imagem de referência
   const ALVOS = {
+    casa2:  { ratio: 984 / 850, nome: 'A2 · foto nova' },
     casa:   { ratio: 875 / 743, nome: 'A · foto da garrafa' },
     render: { ratio: 756 / 624, nome: 'B · estúdio' },
     antiga: { ratio: 817 / 712, nome: 'C · sem safra' }
@@ -65,7 +67,7 @@
 
   // ---- Estabilizador: suaviza e "segura" a pose quando a variação é pequena ----
   const Q = new URLSearchParams(location.search);
-  const EST = { on: Q.get('est') !== '0', a: parseFloat(Q.get('a') || '0.15'), dz: parseFloat(Q.get('dz') || '0.03'), dzAng: parseFloat(Q.get('ang') || '2'), n: parseInt(Q.get('n') || '7', 10) };
+  const EST = { on: Q.get('est') !== '0', a: parseFloat(Q.get('a') || '0.15'), dz: parseFloat(Q.get('dz') || '0.03'), dzAng: parseFloat(Q.get('ang') || '2'), n: parseInt(Q.get('n') || '7', 10), dzS: parseFloat(Q.get('dzs') || '0.04'), plano: Q.get('plano') !== '0' };
   AFRAME.registerComponent('estabilizar', {
     schema: { alvo: { type: 'selector' } },
     init() {
@@ -82,14 +84,22 @@
       t.matrix.decompose(this.p, this.q, this.s);
       if (EST.on && EST.n > 1) {
         // filtro de mediana na posição e média na rotação: descarta saltos de 1-2 quadros
-        this.hist.push({ p: this.p.clone(), q: this.q.clone() });
+        this.hist.push({ p: this.p.clone(), q: this.q.clone(), s: this.s.clone() });
         if (this.hist.length > EST.n) this.hist.shift();
-        const med = (k) => { const v = this.hist.map(h => h.p[k]).sort((x, y) => x - y); return v[v.length >> 1]; };
+        const med = (k, c = 'p') => { const v = this.hist.map(h => h[c][k]).sort((x, y) => x - y); return v[v.length >> 1]; };
         this.mp.set(med('x'), med('y'), med('z'));
+        this.s.set(med('x', 's'), med('y', 's'), med('z', 's'));
         const ref = this.hist[this.hist.length - 1].q; let x = 0, y = 0, z = 0, w = 0;
         for (const h of this.hist) { const sg = (h.q.dot(ref) < 0) ? -1 : 1; x += sg*h.q.x; y += sg*h.q.y; z += sg*h.q.z; w += sg*h.q.w; }
         this.mq.set(x, y, z, w).normalize();
         this.p.copy(this.mp); this.q.copy(this.mq);
+      }
+      if (EST.on && EST.plano) {
+        // mantém só o giro no plano da tela: elimina a "distorção" de inclinações mal estimadas
+        const ex = new THREE.Vector3(1, 0, 0).applyQuaternion(this.q);
+        const roll = Math.atan2(ex.y, ex.x);
+        this.q.setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll);
+        const esc = (this.s.x + this.s.y) / 2; this.s.set(esc, esc, esc);
       }
       if (!this.tinha || !EST.on) {
         this.cp.copy(this.p); this.cq.copy(this.q); this.cs.copy(this.s); this.tinha = true;
@@ -97,9 +107,10 @@
         const largura = this.cs.x || 1;
         const dist = this.p.distanceTo(this.cp) / largura;
         const ang = this.q.angleTo(this.cq) * 180 / Math.PI;
-        if (dist > EST.dz || ang > EST.dzAng) {
+        const dS = Math.abs(this.s.x - this.cs.x) / (this.cs.x || 1);
+        if (dist > EST.dz || ang > EST.dzAng || dS > EST.dzS) {
           // quanto maior o movimento, mais rápido acompanha
-          const k = Math.min(1, EST.a * (1 + Math.max(dist / EST.dz, ang / EST.dzAng) / 4));
+          const k = Math.min(1, EST.a * (1 + Math.max(dist / EST.dz, ang / EST.dzAng, dS / EST.dzS) / 4));
           this.cp.lerp(this.p, k); this.cq.slerp(this.q, k); this.cs.lerp(this.s, k);
         }
       }
@@ -193,7 +204,7 @@
       'Câmera abriu em: ' + $('cam').textContent,
       'Reconheceu após (com câmera aberta): ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
       'Tolerância: ' + TOL,
-      'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado') + ' (a=' + EST.a + ', dz=' + EST.dz + ', ang=' + EST.dzAng + ', n=' + EST.n + ')',
+      'Estabilizador: ' + (EST.on ? 'ligado' : 'desligado') + ' (a=' + EST.a + ', dz=' + EST.dz + ', ang=' + EST.dzAng + ', n=' + EST.n + ', dzs=' + EST.dzS + ', plano=' + EST.plano + ')',
       'Sobreposição: ' + (opaco ? 'opaca' : 'transparente'),
       'Perdeu o alvo: ' + lostCount + 'x',
       'FPS: ' + fps,
