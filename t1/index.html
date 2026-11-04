@@ -43,7 +43,7 @@
 
 <div id="hud">
   <div>Alvo: <b id="alvo">–</b> · Status: <b id="st">carregando…</b></div>
-  <div>Tempo até reconhecer: <b id="tf">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
+  <div>Câmera abriu em: <b id="cam">–</b> · Reconheceu após: <b id="tf">–</b></div><div>Tolerância: <b id="tol">–</b> · Perdeu: <b id="lost">0</b>× · FPS: <b id="fps">–</b></div>
   <button id="copy">Copiar diagnóstico</button><button id="toggle">Ocultar sobreposição</button><button onclick="location.reload()">Trocar alvo</button>
 </div>
 
@@ -62,6 +62,9 @@
     antiga: { ratio: 817 / 712, nome: 'C · sem safra' }
   };
 
+  const TOL = parseInt(new URLSearchParams(location.search).get('tol') || '15', 10);
+  let tReady = null;
+  document.getElementById('tol').textContent = TOL;
   let t0 = null, firstFound = null, lostCount = 0, status = 'carregando', alvoAtual = null, fps = 0;
   const setStatus = (s) => { status = s; $('st').textContent = s; };
 
@@ -78,7 +81,7 @@
     const wrap = document.createElement('div');
     wrap.innerHTML = `
       <a-scene id="scene"
-        mindar-image="imageTargetSrc: ../assets/targets/${alvo}.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: yes; filterMinCF: 0.0001; filterBeta: 0.001"
+        mindar-image="imageTargetSrc: ../assets/targets/${alvo}.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: yes; filterMinCF: 0.0001; filterBeta: 0.001; missTolerance: ${TOL}; warmupTolerance: 3"
         color-space="sRGB" renderer="colorManagement: true; antialias: true"
         vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
         <a-assets><img id="ref" src="../assets/targets/${alvo}.jpg" crossorigin="anonymous"></a-assets>
@@ -95,11 +98,11 @@
 
     const scene = document.getElementById('scene');
     const target = document.getElementById('target');
-    scene.addEventListener('arReady', () => setStatus('procurando o rótulo'));
+    scene.addEventListener('arReady', () => { tReady = performance.now(); $('cam').textContent = ((tReady - t0)/1000).toFixed(1) + ' s'; setStatus('procurando o rótulo'); });
     scene.addEventListener('arError', () => setStatus('erro ao abrir a câmera'));
     target.addEventListener('targetFound', () => {
       if (firstFound === null) {
-        firstFound = (performance.now() - t0) / 1000;
+        firstFound = (performance.now() - (tReady || t0)) / 1000;
         $('tf').textContent = firstFound.toFixed(1) + ' s';
       }
       setStatus('rótulo reconhecido');
@@ -128,7 +131,9 @@
     const txt = [
       'Teste: T1/T2 · alvo ' + alvoAtual,
       'Status: ' + status,
-      'Tempo até reconhecer: ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
+      'Câmera abriu em: ' + $('cam').textContent,
+      'Reconheceu após (com câmera aberta): ' + (firstFound === null ? 'não reconheceu' : firstFound.toFixed(1) + ' s'),
+      'Tolerância: ' + TOL,
       'Perdeu o alvo: ' + lostCount + 'x',
       'FPS: ' + fps,
       'Tela: ' + screen.width + 'x' + screen.height + ' @' + devicePixelRatio,
